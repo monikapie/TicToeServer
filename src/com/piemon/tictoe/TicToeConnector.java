@@ -1,42 +1,43 @@
 package com.piemon.tictoe;
 
 
+import java.rmi.RemoteException;
 import java.util.ArrayList;
 import java.util.List;
 
 public class TicToeConnector implements GameConnector{
     private Game game;
     private List<Player> players = new ArrayList<>();
+    private String messageToClient;
 
     @Override
-    public String addPlayer(Player player) {
+    public boolean addPlayer(Player player) {
         game = Game.getGameInstance();
         boolean isPlayerAdded = game.addPlayer(player);
-        String messagePlayerAdded;
         if(!isPlayerAdded){
-            sendPlayersNotification(GameEventMessage.MESSAGE_GAME_IS_FULL.getMessage());
-            messagePlayerAdded = GameEventMessage.MESSAGE_GAME_IS_FULL.getMessage();
+            messageToClient = GameEventMessage.MESSAGE_GAME_IS_FULL.getMessage();
+            getMessage();
+            return false;
         }
         else{
             players.add(player);
-            sendPlayersNotification(player.getName() + GameEventMessage.MESSAGE_PLAYER_ADDED.getMessage() + player.getSign());
-            messagePlayerAdded = player.getName() + GameEventMessage.MESSAGE_PLAYER_ADDED.getMessage() + player.getSign();
+            messageToClient = player.getName() + GameEventMessage.MESSAGE_PLAYER_ADDED.getMessage() + player.getSign();
             if(game.getGameStatus().equals(GameStatusChecker.GameStatusEnum.STARTED)){
-                String boardDrawing = drawBoard();
-                String successMessage = "\n" + GameEventMessage.MESSAGE_GAME_STARTED.getMessage()
+                messageToClient += "\n" + GameEventMessage.MESSAGE_GAME_STARTED.getMessage()
                         + "\n" + GameEventMessage.MESSAGE_WHO.getMessage()
-                        +" " + game.getPlayers().get(0).getName();
-                sendPlayersNotification(successMessage);
-                messagePlayerAdded = messagePlayerAdded + "\n" + boardDrawing + successMessage;
+                        +" " + game.getPlayers().get(0).getName()
+                        + drawBoard();
+                getMessage();
             }
         }
 
-        return messagePlayerAdded;
+        return true;
     }
 
-    private String drawBoard() {
+    @Override
+    public String drawBoard() {
         char[][] board = game.getBoard().getBoard();
-        String boardDrawing = "Board\n";
+        String boardDrawing = "\nBoard\n";
         for (char[] boardRow : board) {
             System.out.print('|');
             boardDrawing+=("|");
@@ -55,63 +56,75 @@ public class TicToeConnector implements GameConnector{
         }
         return boardDrawing;
     }
-    
-    private void sendPlayersNotification(String message) {
-        System.out.println(message);
+
+    @Override
+    public String getMessage() {
+        System.out.println(messageToClient);
+        return messageToClient;
     }
 
     @Override
-    public String move(int x, int y, Player player) {
+    public boolean move(int x, int y, Player player) {
         Player playerServ = player;
         for (Player playerServer : players) if(playerServer.getName().equals(player.getName())) playerServ = playerServer;
         if(isPlayerTurn(playerServ.getNumber(), GameStatusChecker.howManySignsOnBoard(game.getBoard().getBoard()))){
-            String messageMove = makeTheMove(x,y,playerServ);
-            return messageMove;
+            return makeTheMove(x,y,playerServ);
         } else{
-            sendPlayersNotification(GameEventMessage.MESSAGE_NOT_MOVE.getMessage());
-            return GameEventMessage.MESSAGE_NOT_MOVE.getMessage();
+            messageToClient = GameEventMessage.MESSAGE_NOT_MOVE.getMessage();
+            getMessage();
+            return false;
         }
 
     }
 
-    private String makeTheMove(int x, int y, Player player){
+    @Override
+    public boolean isGameStared() {
+        return game.getGameStatus().equals(GameStatusChecker.GameStatusEnum.STARTED) || game.getGameStatus().equals(GameStatusChecker.GameStatusEnum.IN_PROGRESS);
+    }
+
+    @Override
+    public int howManySignsOnBoard() throws RemoteException {
+        return GameStatusChecker.howManySignsOnBoard(game.getBoard().getBoard());
+    }
+
+    private boolean makeTheMove(int x, int y, Player player){
         char[][] board = game.getBoard().getBoard();
         if(!isMovePossible(board,x,y)){
-            sendPlayersNotification(GameEventMessage.MESSAGE_FIELD_LOCKED.getMessage());
-            return GameEventMessage.MESSAGE_FIELD_LOCKED.getMessage();
+            messageToClient = GameEventMessage.MESSAGE_FIELD_LOCKED.getMessage();
+            getMessage();
+            return false;
         }
         Sign playerSign = player.getSign();
         board[x][y] = playerSign.name().charAt(0);
         GameStatusChecker.GameStatusEnum gameStatus = GameStatusChecker.getGameStatus(playerSign ,board);
         game.setGameStatus(gameStatus);
-        String messageMove;
         switch (gameStatus){
             case IN_PROGRESS:
                 int opponentNumber = player.getNumber() == 1 ? 1 : 0;
-                messageMove = GameEventMessage.MESSAGE_WHO.getMessage()
+                messageToClient = GameEventMessage.MESSAGE_WHO.getMessage()
                         + game.getPlayers().get(opponentNumber).getName();
-                sendPlayersNotification(messageMove);
                 String boardDrawing = drawBoard();
-                messageMove+=boardDrawing;
+                messageToClient+=boardDrawing;
+                getMessage();
                 break;
             case WIN_X:
-                messageMove = GameEventMessage.MESSAGE_GAME_FINISHED.name() + player.getName();
-                sendPlayersNotification(messageMove);
+                messageToClient = GameEventMessage.MESSAGE_GAME_FINISHED.getMessage() + player.getName();
+                getMessage();
                 break;
             case WIN_Y:
-                messageMove = GameEventMessage.MESSAGE_GAME_FINISHED.name() + player.getName();
-                sendPlayersNotification(messageMove);
+                messageToClient = GameEventMessage.MESSAGE_GAME_FINISHED.getMessage() + player.getName();
+                getMessage();
                 break;
             case DRAW:
-                messageMove = GameEventMessage.MESSAGE_DRAW.getMessage();
-                sendPlayersNotification(messageMove);
+                messageToClient = GameEventMessage.MESSAGE_DRAW.getMessage();
+                getMessage();
                 break;
             default:
-                messageMove = GameEventMessage.MESSAGE_WAIT.getMessage();
-                sendPlayersNotification(messageMove);
+                messageToClient = GameEventMessage.MESSAGE_WAIT.getMessage();
+                getMessage();
         }
 
-        return messageMove;
+        return true;
     }
 
     private boolean isPlayerTurn(int number, int i) {
@@ -119,7 +132,7 @@ public class TicToeConnector implements GameConnector{
     }
 
     private boolean isMovePossible(char[][] board, int x, int y) {
-        return board[x][y] == 0 || x > 2 || y > 2;
+        return x <= 2 && y <= 2 && board[x][y] == 0;
     }
 
 }
